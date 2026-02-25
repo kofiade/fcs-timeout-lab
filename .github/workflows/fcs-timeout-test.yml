@@ -1,0 +1,83 @@
+name: FCS Timeout Test Lab
+
+on:
+  workflow_dispatch:         # Lets you run it manually with a button
+    inputs:
+      timeout_seconds:
+        description: 'Scan timeout in seconds'
+        required: true
+        default: '300'
+
+jobs:
+  # -------------------------------------------------------
+  # Job 1 — Uses YOUR chosen timeout (from the input box)
+  # -------------------------------------------------------
+  custom-timeout:
+    runs-on: ubuntu-latest
+    name: "Scan with custom timeout (${{ github.event.inputs.timeout_seconds }}s)"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run FCS IaC Scan (custom timeout)
+        uses: crowdstrike/fcs-action@v3.0.0
+        id: fcs_custom
+        with:
+          falcon_client_id: ${{ vars.FALCON_CLIENT_ID }}
+          falcon_region: us-2            # change if your tenant is in another region
+          path: './infra'
+          timeout: ${{ github.event.inputs.timeout_seconds }}
+          report_formats: 'json'
+          output_path: './results/'
+        env:
+          FALCON_CLIENT_SECRET: ${{ secrets.FALCON_CLIENT_SECRET }}
+
+      - name: Show exit code
+        if: always()
+        run: |
+          echo "============================================"
+          echo " Timeout used  : ${{ github.event.inputs.timeout_seconds }}s"
+          echo " FCS exit code : ${{ steps.fcs_custom.outputs.exit-code }}"
+          echo "============================================"
+
+      - name: Show scan results
+        if: always()
+        run: |
+          echo "--- Scan Results ---"
+          cat ./results/*.json || echo "No results file found."
+
+  # -------------------------------------------------------
+  # Job 2 — Runs 3 timeouts side-by-side for comparison
+  # -------------------------------------------------------
+  compare-timeouts:
+    runs-on: ubuntu-latest
+    name: "Compare timeouts (10s vs 60s vs 300s)"
+    strategy:
+      fail-fast: false
+      matrix:
+        timeout: [10, 60, 300]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run FCS IaC Scan (timeout ${{ matrix.timeout }}s)
+        uses: crowdstrike/fcs-action@v3.0.0
+        id: fcs
+        with:
+          falcon_client_id: ${{ vars.FALCON_CLIENT_ID }}
+          falcon_region: us-2            # change if your tenant is in another region
+          path: './infra'
+          timeout: ${{ matrix.timeout }}
+          report_formats: 'json'
+          output_path: './results/'
+        env:
+          FALCON_CLIENT_SECRET: ${{ secrets.FALCON_CLIENT_SECRET }}
+
+      - name: Print result
+        if: always()
+        run: |
+          echo "============================================"
+          echo " Timeout  : ${{ matrix.timeout }}s"
+          echo " Exit code: ${{ steps.fcs.outputs.exit-code }}"
+          echo "============================================"
+          cat ./results/*.json || echo "No results file found."
